@@ -2,8 +2,9 @@
   "A spawning process controlller.
 
 Like a process supervisor.  This uses core.async extensively."
-  (:require [clojure.core.async
-             :refer [>! <! >!! <!! go go-loop timeout chan close! alts! alts!! thread]])
+  (:require
+   [clojure.core.async
+    :refer [>! <! >!! <!! go go-loop chan close!  alts! alts!! timeout thread]])
   (:require [clojure.string :as str])
   (:require [clojure.java.io :as io])
   (:require [org.httpkit.client :as http-kit])
@@ -78,9 +79,11 @@ async behaviour."  [monitor-url request-chan response-chan]
        (fn [url options callback]
          (let [[command & args] (<!! command-chan)]
            (when args (println "command " command " the args were: " args))
-           ;; (println "the url is " url " options " options " and the command " command)
+           (println ">> the url is " url " options " options " and the command " command)
            (Thread/sleep (options :timeout))
-           (>!! request-chan (if args (apply conj [command] args) [command]))))]
+           (>!! request-chan (if args
+                               (apply conj [command] args)
+                               [command]))))]
       (call-http monitor-url request-chan response-chan))))
 
 (defn -main
@@ -92,11 +95,16 @@ async behaviour."  [monitor-url request-chan response-chan]
     ;; read messages from the command input
     (go-loop 
      [[message & args] (<! input)]
-     (let [response
+     (let [response ; capture the response from processing the message
            (case message
              :start (let [[id & rest] args]
-                      (dosync
-                       (alter started assoc id (start-process id (scripts id)))))
+                      ;; Could add a test for id == :all here
+                      (if (scripts id)
+                        (dosync
+                         (alter started assoc id (start-process id (scripts id))))
+                        ;; Else there's an error
+                        [:error :notfound]))
+             :deploy (let [[id & rest] args] (println "redeploy " id " " args))
              :kill (let [[id & rest] args]
                      (when (@started args)
                        (>! ((@started args) :from) :kill)))
@@ -105,7 +113,7 @@ async behaviour."  [monitor-url request-chan response-chan]
              :http-error [:http-error "whoops! http error!"]
              :exit (do (println "dieing!") [:quit])
              true [:http-error "whoops! that's not a signal we understand"])]
-       (>! output (if response response []))) ; send some data so we can recur the http
+       (>! output (if response response []))) ; and send response so we recur http
      (recur (<! input)))
      
     ;; read the signals from the started processes
@@ -113,7 +121,7 @@ async behaviour."  [monitor-url request-chan response-chan]
      [channels (keep #(% :from) (vals @started))]
      (let [[[message id args] ch] (alts! (conj channels (timeout 100)))]
        (case message
-         :line (println id " read " message " with args: " args)
+         :line (println "process " id " read " message " with args: " args)
          :exit (dosync (alter started dissoc id) (println id " exited"))
          nil)
        (recur (keep #(% :from) (vals @started)))))
