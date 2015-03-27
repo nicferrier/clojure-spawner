@@ -72,6 +72,7 @@ async behaviour."  [monitor-url request-chan response-chan]
      (>! command-chan [:start :doit2])
      (>! command-chan [:noop])
      (>! command-chan [:start :doit])
+     (>! command-chan [:start :nothere])
      (>! command-chan [:status])
      (>! command-chan [:exit]))
     (with-redefs
